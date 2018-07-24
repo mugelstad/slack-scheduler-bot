@@ -1,6 +1,8 @@
 var express = require('express');
 var app = express();
 
+var fetch = require('node-fetch')
+
 const { RTMClient, WebClient } = require('@slack/client');
 
 // Get an API token by creating an app at <https://api.slack.com/apps?new_app=1>
@@ -25,45 +27,32 @@ rtm.on('message', (event) => {
  if (event.subtype) { return; }
 
 //What dialogflow sends back
- web.chat.postMessage({
-   channel: conversationId,
-   text: 'app reminder confirmation',
-   attachments: [{
-     text: 'Would you like to set reminder for laundry at 10am on Saturday?',
-     attachment_type: 'default',
-     callback_id: "reminderConfirm",
-     actions: [{
-         'name': 'choice',
-         'text': 'confirm',
-         'type': 'button',
-         'value': 'confirm',
-         "confirm": {
-           "title": "Are you sure?",
-           'ok_text': "yes",
-           'dismiss_text': 'no'
-         }
-       }]
-   }]
- })
- .catch(console.error)
 
- 
+
 
   text = event.text;
-  // fetch('/query', {
-  //   method: 'POST',
-  //   Headers: {
-  //     Authorization: process.env.CLIENT_ACCESS_TOKEN,
-  //     "Content-Type": "application/json"
-  //   },
-  //   body: JSON.stringify(text)
-  //
-  // }).then((res) =>{
-  //   console.log('response from fetching', res)
-  // })
-  // .catch((err) => {
-  //   console.log('error', err)
-  // })
+  fetch('https://api.dialogflow.com/v1/?v=20150910', {
+    method: 'POST',
+    Headers: {
+      Authorization: process.env.CLIENT_ACCESS_TOKEN,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      "lang": "en",
+      "query": text,
+      "sessionId": "1234567890",
+    })
+
+  }).then((res) =>{
+    console.log('response from fetching', res)
+    console.log('RESPONSE', res.Response)
+
+
+
+  })
+  .catch((err) => {
+    console.log('error', err)
+  })
 
   const request = {
     session: sessionPath,
@@ -81,6 +70,30 @@ rtm.on('message', (event) => {
       console.log('Detected intent', result.parameters.fields);
       console.log(`  Query: ${result.queryText}`);
       console.log(`  Response: ${result.fulfillmentText}`);
+
+
+      web.chat.postMessage({
+        channel: conversationId,
+        text: 'app reminder confirmation',
+        attachments: [{
+          text: result.fulfillmentText,
+          attachment_type: 'default',
+          callback_id: "reminderConfirm",
+          actions: [{
+              'name': 'choice',
+              'text': 'confirm',
+              'type': 'button',
+              'value': 'confirm',
+              "confirm": {
+                "title": "Are you sure?",
+                'ok_text': "yes",
+                'dismiss_text': 'no'
+              }
+            }]
+        }]
+      })
+      .catch(console.error)
+
       if (result.intent) {
         console.log(`  Intent: ${result.intent.displayName}`);
       } else {
