@@ -11,7 +11,6 @@ const token = process.env.SLACK_API_TOKEN || '';
 if (!token) { console.log('You must specify a token to use this example'); process.exitCode = 1; }
 
 const dialogflow = require('dialogflow')
-const google = require('googleapis')
 
 // Initialize an RTM API client
 const rtm = new RTMClient(token);
@@ -141,6 +140,7 @@ const sessionPath = sessionClient.sessionPath(process.env.DIALOGFLOW_PROJECT_ID,
 //GOOGLE CALENDAR
 const fs = require('fs');
 const readline = require('readline');
+const {google} = require('googleapis');
 
 // If modifying these scopes, delete credentials.json.
 const SCOPES = ['https://www.googleapis.com/auth/calendar.readonly'];
@@ -229,6 +229,7 @@ function listEvents(auth) {
     }
   });
 }
+
 
 
 
