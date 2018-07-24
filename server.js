@@ -9,7 +9,7 @@ const token = process.env.SLACK_API_TOKEN || '';
 if (!token) { console.log('You must specify a token to use this example'); process.exitCode = 1; }
 
 const dialogflow = require('dialogflow')
-import {google} from 'googleapis';
+const google = require('googleapis')
 
 // Initialize an RTM API client
 const rtm = new RTMClient(token);
@@ -24,6 +24,7 @@ rtm.on('message', (event) => {
  var conversationId = event.channel
  if (event.subtype) { return; }
 
+//What dialogflow sends back
  web.chat.postMessage({
    channel: conversationId,
    text: 'app reminder confirmation',
@@ -45,6 +46,8 @@ rtm.on('message', (event) => {
    }]
  })
  .catch(console.error)
+
+ 
 
   text = event.text;
   // fetch('/query', {
