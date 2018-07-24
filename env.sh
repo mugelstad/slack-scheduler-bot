@@ -1,0 +1,8 @@
+export CLIENT_ID="240023613540-1hffbaq0cibnp6o3o9v234g00e0vk37j.apps.googleusercontent.com"
+export CLIENT_SECRET="zgDigmdspVE7z-VJnG0gEGGz"
+export REDIRECT_URL="http://localhost:1337/oauthcallback"
+export OATH_ACCESS_TOKEN="9ff719347f9b8594a312bca3318f40f9"
+export DIALOGFLOW_PROJECT_ID="nem-bot-user"
+export GOOGLE_APPLICATION_CREDENTIALS="./nem-bot.json"
+export SLACK_API_TOKEN="xoxb-404719670166-404736017142-KNpyAiEC7o7RozkIsBJeCHQ9"
+export CLIENT_ACCESS_TOKEN="815bce87ba9440968f71a4e6c46ba821"
