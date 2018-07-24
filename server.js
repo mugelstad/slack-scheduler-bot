@@ -3,6 +3,8 @@ var app = express();
 
 var fetch = require('node-fetch')
 
+var bodyParser = require('body-parser')
+
 const { RTMClient, WebClient } = require('@slack/client');
 
 // Get an API token by creating an app at <https://api.slack.com/apps?new_app=1>
@@ -66,30 +68,35 @@ rtm.on('message', (event) => {
       console.log(`  Response: ${result.fulfillmentText}`);
 
 
-      web.chat.postMessage({
-        channel: conversationId,
-        text: 'app reminder confirmation',
-        attachments: [{
-          text: result.fulfillmentText,
-          attachment_type: 'default',
-          callback_id: "reminderConfirm",
-          actions: [{
-              'name': 'yes',
-              'text': 'yes',
-              'type': 'button',
-              'value': 'yes',
-              "yes": {}//give access to calendar
-            },
-            {
-              'name': 'no',
-              'text': 'no',
-              'type': 'button',
-              'value': 'no',
-              "no": {}
-            }]
-          }]
-        })
-      .catch(console.error)
+      //confirm only after required parameter complete
+  if (result.action === 'create_reminder' && result.allRequiredParamsPresent) {
+  web.chat.postMessage({
+    channel: conversationId,
+    text: 'app reminder confirmation',
+    attachments: [{
+      text: result.fulfillmentText,
+      attachment_type: 'default',
+      callback_id: "reminderConfirm",
+      actions: [{
+          'name': 'yes',
+          'text': 'yes',
+          'type': 'button',
+          'value': 'yes',
+          "yes": {}//give access to calendar
+        },
+        {
+          'name': 'no',
+          'text': 'no',
+          'type': 'button',
+          'value': 'no',
+          "no": {}
+        }]
+      }]
+    })
+  .catch(console.error)
+} else {
+  web.chat.postMessage({ channel: conversationId, text: result.fulfillmentText});
+}
 
       //inputs for google calendar
       var subject = result.parameters.fields.Subject.stringValue;
@@ -114,7 +121,10 @@ web.channels.list()
    res.channels.forEach(c => console.log(c.name));
  })
  .catch(console.error);
-
+// rtm.on('ready', (event) => {
+//   console.log('Elaine is ready')
+//   web.
+// })
 // Log all reactions
 rtm.on('reaction_added', (event) => {
  // Structure of `event`: <https://api.slack.com/events/reaction_added>
@@ -125,19 +135,28 @@ rtm.on('reaction_removed', (event) => {
  console.log(`Reaction removed by ${event.user}: ${event.reaction}`);
 });
 
-// Send a message once the connection is ready
-rtm.on('ready', (event) => {
-});
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({extended: false}))
+
 
 app.post('/schedule', (req, res) => {
- console.log('schedule route', req)
+  //determines which button the user clicked
+ var valueClicked = JSON.parse(req.body.payload).actions[0].value
+ if (valueClicked === 'yes'){
+   //create google calendar reminder
+   calendar.events.insert()
+ } else {
+   //shut it down
+ }
 })
+
+// app.get('/schedule', )
 
 const sessionId = 'nem-bot-sessionId';
 const sessionClient = new dialogflow.SessionsClient();
 const sessionPath = sessionClient.sessionPath(process.env.DIALOGFLOW_PROJECT_ID, sessionId);
 
-//GOOGLE CALENDAR
+//CONNECT GOOGLE CALENDAR
 const fs = require('fs');
 const readline = require('readline');
 const {google} = require('googleapis');
@@ -178,12 +197,34 @@ function authorize(credentials, callback) {
  * @param {google.auth.OAuth2} oAuth2Client The OAuth2 client to get token for.
  * @param {getEventsCallback} callback The callback for the authorized client.
  */
+
+ const authUrl = oAuth2Client.generateAuthUrl({
+   access_type: 'offline',
+   scope: SCOPES,
+ });
+
 function getAccessToken(oAuth2Client, callback) {
   const authUrl = oAuth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
   });
+
   console.log('Authorize this app by visiting this url:', authUrl);
+
+  // Send a message once the connection is ready
+  rtm.on('ready', (event) => {
+    web.chat.postMessage({
+      channel: conversationId,
+      text: "Hello! I am nem bot. To connect to  Google Calendar, please click on this url: ",
+      attachments: [{
+        text: authUrl,
+        attachment_type: 'default',
+        callback_id: "authorizeGC",
+      }]
+    }).catch(console.error)
+    console.log('Nicole is ready!')
+  })
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
