@@ -1,32 +1,47 @@
+var {User} = require('./Users.js')
 var express = require('express');
+var mongoose = require('mongoose')
 var app = express();
-
 var fetch = require('node-fetch')
+var bodyParser = require('body-parser');
+
 
 const { RTMClient, WebClient } = require('@slack/client');
 
 // Get an API token by creating an app at <https://api.slack.com/apps?new_app=1>
 // It's always a good idea to keep sensitive data like the token outside your source code. Prefer environment variables.
-const token = process.env.SLACK_API_TOKEN || '';
-if (!token) { console.log('You must specify a token to use this example'); process.exitCode = 1; }
+const slackToken = process.env.SLACK_API_TOKEN || '';
+if (!slackToken) { console.log('You must specify a token to use this example'); process.exitCode = 1; }
 
 const dialogflow = require('dialogflow')
 
+//CONNECT GOOGLE CALENDAR
+const fs = require('fs');
+const readline = require('readline');
+const {google} = require('googleapis');
+
+let text;
+
 // Initialize an RTM API client
-const rtm = new RTMClient(token);
-const web = new WebClient(token);
+const rtm = new RTMClient(slackToken);
+const web = new WebClient(slackToken);
 // Start the connection to the platform
 rtm.start();
 
-// Log all incoming messages
-let text;
+
+// https://developers.google.com/calendar/quickstart/nodejs
+const oauth2Client = new google.auth.OAuth2(
+  process.env.CLIENT_ID,
+  process.env.CLIENT_SECRET,
+  process.env.REDIRECT_URL
+)
+
 rtm.on('message', (event) => {
- console.log(event)
- var conversationId = event.channel
+ const conversationId = event.channel
  if (event.subtype) { return; }
 
-//What dialogflow sends back
   text = event.text;
+
   fetch('https://api.dialogflow.com/v1/?v=20150910', {
     method: 'POST',
     Headers: {
@@ -40,9 +55,7 @@ rtm.on('message', (event) => {
     })
 
   }).then((res) =>{
-    console.log('response from fetching', res)
-    console.log('RESPONSE', res.Response)
-
+    //console.log('response from fetching from dialog flow', res)
   })
   .catch((err) => {
     console.log('error', err)
@@ -61,59 +74,53 @@ rtm.on('message', (event) => {
   sessionClient.detectIntent(request)
     .then(responses => {
       const result = responses[0].queryResult;
-      console.log('Detected intent', result.parameters.fields);
-      console.log(`  Query: ${result.queryText}`);
-      console.log(`  Response: ${result.fulfillmentText}`);
 
-
-      web.chat.postMessage({
-        channel: conversationId,
-        text: 'app reminder confirmation',
-        attachments: [{
-          text: result.fulfillmentText,
-          attachment_type: 'default',
-          callback_id: "reminderConfirm",
-          actions: [{
-              'name': 'yes',
-              'text': 'yes',
-              'type': 'button',
-              'value': 'yes',
-              "yes": {}//give access to calendar
-            },
-            {
-              'name': 'no',
-              'text': 'no',
-              'type': 'button',
-              'value': 'no',
-              "no": {}
-            }]
-          }]
-        })
-      .catch(console.error)
-
-      //inputs for google calendar
-      var subject = result.parameters.fields.Subject.stringValue;
-      var date = result.parameters.fields.date.stringValue;
-
-
-      if (result.intent) {
-        console.log(`  Intent: ${result.intent.displayName}`);
-      } else {
-        console.log(`  No intent matched.`);
-      }
+      //confirm only after required parameter complete
+  if (result.action === 'create_reminder' && result.allRequiredParamsPresent) {
+  web.chat.postMessage({
+    channel: conversationId,
+    text: 'app reminder confirmation',
+    attachments: [{
+      text: result.fulfillmentText,
+      attachment_type: 'default',
+      callback_id: "reminderConfirm",
+      actions: [{
+          'name': 'yes',
+          'text': 'yes',
+          'type': 'button',
+          'value': 'yes',
+          "yes": {}//give access to calendar
+        },
+        {
+          'name': 'no',
+          'text': 'no',
+          'type': 'button',
+          'value': 'no',
+          "no": {}
+        }]
+      }]
     })
-    .catch(err => {
-      console.error('ERROR:', err);
-    });
+  .catch(console.error)
 
+  } else {
+    web.chat.postMessage({ channel: conversationId, text: result.fulfillmentText});
+  }
+
+    //inputs for google calendar
+    var subject = result.parameters.fields.Subject.stringValue;
+    var date = result.parameters.fields.date.stringValue;
+
+
+    if (result.intent) {
+      // console.log(`  Intent: ${result.intent.displayName}`);
+    } else {
+      console.log(`  No intent matched.`);
+    }
+  })
+  .catch(err => {
+    console.error('ERROR:', err);
+  });
 })
-
-web.channels.list()
- .then((res) => {
-   // `res` contains information about the channels
-   res.channels.forEach(c => console.log(c.name));
- })
- .catch(console.error);
 
 // Log all reactions
 rtm.on('reaction_added', (event) => {
@@ -125,87 +132,86 @@ rtm.on('reaction_removed', (event) => {
  console.log(`Reaction removed by ${event.user}: ${event.reaction}`);
 });
 
-// Send a message once the connection is ready
-rtm.on('ready', (event) => {
-});
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({extended: false}))
+
 
 app.post('/schedule', (req, res) => {
- console.log('schedule route', req)
+  //determines which button the user clicked
+ var parsedPayload = JSON.parse(req.body.payload)
+ var valueClicked = parsedPayload.actions[0].value
+ if (valueClicked === 'yes'){
+   //create google calendar reminder
+   console.log('Clicked YES')
+   //if credentials are not there, generate a URL for user
+   User.findOne({slack_id: parsedPayload.user.id}, (err, user) => {
+      if (err) { console.log('error in finding user in /schedule', err) }
+      if (user) {
+        if (user.token) {
+          console.log('userfound in /schedule', user)
+          // oauth2Client.setCredentials(credentials);
+          addReminder(user.token);
+          web.chat.postMessage({ channel: parsedPayload.channel.id, text: 'event created on google' });
+        }
+      } else { //no user
+        //generate authUrl
+        console.log('no user found in /schedule')
+        // var link = authorize(credentials, addEvent, parsedPayload.user.id)
+        var link = oauth2Client.generateAuthUrl({
+          access_type: 'offline',
+          state: parsedPayload.user.id, // meta-data for DB
+          scope: [
+            'https://www.googleapis.com/auth/calendar'
+          ]
+        })
+
+        web.chat.postMessage({
+          channel: parsedPayload.channel.id,
+          text: "Authorize Google Calendar: " + link
+        })
+      }
+   })
+ } else {//clicked NO
+   web.chat.postMessage({
+     channel: JSON.parse(req.body.payload).channel.id,
+     text: 'Okay. Event will not be added to Calendar.'
+   })
+ }
+})//end of post schedule end point
+
+app.get('/oauthcallback', (req, res) => {
+  console.log('REQ', req.query)
+  oauth2Client.getToken(req.query.code, (err, token) => {
+    if (err){
+      console.error(err)
+      res.send('we had an error :(')
+      return;
+    }
+    oauth2Client.setCredentials(token);
+    res.send('congratulations. authorized')
+
+    //create user in mongoDB
+    new User({slack_id: req.query.state, token: token}).save()
+    .then()
+    .catch((err) => {
+      console.error(err);
+    })
+    //save a token and slack_id
+  });
 })
 
 const sessionId = 'nem-bot-sessionId';
 const sessionClient = new dialogflow.SessionsClient();
 const sessionPath = sessionClient.sessionPath(process.env.DIALOGFLOW_PROJECT_ID, sessionId);
 
+
 //GOOGLE CALENDAR
-const fs = require('fs');
-const readline = require('readline');
-const {google} = require('googleapis');
-
 // If modifying these scopes, delete credentials.json.
-const SCOPES = ['https://www.googleapis.com/auth/calendar.readonly'];
-const TOKEN_PATH = 'token.json';
+const SCOPES = ['https://www.googleapis.com/auth/calendar'];
 
-// Load client secrets from a local file.
-fs.readFile('credentials.json', (err, content) => {
-  if (err) return console.log('Error loading client secret file:', err);
-  // Authorize a client with credentials, then call the Google Calendar API.
-  authorize(JSON.parse(content), listEvents);
-});
-
-/**
- * Create an OAuth2 client with the given credentials, and then execute the
- * given callback function.
- * @param {Object} credentials The authorization client credentials.
- * @param {function} callback The callback to call with the authorized client.
- */
-function authorize(credentials, callback) {
-  const {client_secret, client_id, redirect_uris} = credentials.installed;
-  const oAuth2Client = new google.auth.OAuth2(
-      client_id, client_secret, redirect_uris[0]);
-
-  // Check if we have previously stored a token.
-  fs.readFile(TOKEN_PATH, (err, token) => {
-    if (err) return getAccessToken(oAuth2Client, callback);
-    oAuth2Client.setCredentials(JSON.parse(token));
-    callback(oAuth2Client);
-  });
-}
-
-/**
- * Get and store new token after prompting for user authorization, and then
- * execute the given callback with the authorized OAuth2 client.
- * @param {google.auth.OAuth2} oAuth2Client The OAuth2 client to get token for.
- * @param {getEventsCallback} callback The callback for the authorized client.
- */
-function getAccessToken(oAuth2Client, callback) {
-  const authUrl = oAuth2Client.generateAuthUrl({
-    access_type: 'offline',
-    scope: SCOPES,
-  });
-  console.log('Authorize this app by visiting this url:', authUrl);
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  rl.question('Enter the code from that page here: ', (code) => {
-    rl.close();
-    oAuth2Client.getToken(code, (err, token) => {
-      if (err) return callback(err);
-      oAuth2Client.setCredentials(token);
-      // Store the token to disk for later program executions
-      fs.writeFile(TOKEN_PATH, JSON.stringify(token), (err) => {
-        if (err) console.error(err);
-        console.log('Token stored to', TOKEN_PATH);
-      });
-      callback(oAuth2Client);
-    });
-  });
-}
 
 /**
  * Lists the next 10 events on the user's primary calendar.
- * @param {google.auth.OAuth2} auth An authorized OAuth2 client.
  */
 function listEvents(auth) {
   const calendar = google.calendar({version: 'v3', auth});
@@ -231,7 +237,29 @@ function listEvents(auth) {
 }
 
 
+function addReminder(token){
+  const oauth2Client = new google.auth.OAuth2(
+   process.env.CLIENT_ID,
+   process.env.CLIENT_SECRET,
+   process.env.REDIRECT_URL
+  )
 
+  oauth2Client.setCredentials(token)
 
+  oauth2Client.on('tokens', (tokens) => {
+    if (tokens.refresh_token) {
+      // store the refresh_token in my database!
+      console.log(tokens.refresh_token);
+    }
+    console.log(tokens.access_token);
+  });
 
-app.listen(process.env.PORT || 3000)
+  const calendar = google.calendar({version: 'v3', auth: oauth2Client})
+  console.log('hello, creating a new event')
+  calendar.events.quickAdd({
+    calendarId: 'primary',
+    text: text
+  })
+}
+
+app.listen(process.env.PORT || 1337)
