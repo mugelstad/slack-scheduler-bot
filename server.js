@@ -1,4 +1,4 @@
-var {User} = require('./Users.js')
+var {User, Task, Meeting, InviteRequest} = require('./Users.js')
 var express = require('express');
 var mongoose = require('mongoose')
 var app = express();
@@ -28,6 +28,8 @@ const web = new WebClient(slackToken);
 // Start the connection to the platform
 rtm.start();
 
+var subject, date, time, duration, invitees;
+var calendarType;
 
 // https://developers.google.com/calendar/quickstart/nodejs
 const oauth2Client = new google.auth.OAuth2(
@@ -75,8 +77,11 @@ rtm.on('message', (event) => {
     .then(responses => {
       const result = responses[0].queryResult;
 
+      if(result.action === 'create_reminder') calendarType = 'reminder'
+      else if (result.action === 'create_meeting') calendarType = 'meeting'
       //confirm only after required parameter complete
-  if (result.action === 'create_reminder' && result.allRequiredParamsPresent) {
+  if (result.allRequiredParamsPresent && (result.action === 'create_reminder'
+      || result.action === 'create_meeting')) {
   web.chat.postMessage({
     channel: conversationId,
     text: 'app reminder confirmation',
@@ -107,8 +112,12 @@ rtm.on('message', (event) => {
   }
 
     //inputs for google calendar
-    var subject = result.parameters.fields.Subject.stringValue;
-    var date = result.parameters.fields.date.stringValue;
+    subject = result.parameters.fields.Subject.stringValue;
+    date = result.parameters.fields.date.stringValue;
+
+    if(result.parameters.fields.duration) duration = result.parameters.fields.duration
+    if(result.parameters.fields.time.stringValue) time = result.parameters.fields.time.stringValue
+    if (result.parameters.fields.Invitees) invitees = result.parameters.fields.Invitees
 
 
     if (result.intent) {
@@ -150,13 +159,15 @@ app.post('/schedule', (req, res) => {
         if (user.token) {
           console.log('userfound in /schedule', user)
           // oauth2Client.setCredentials(credentials);
-          addReminder(user.token);
+          console.log('user token', user.token)
+
+          if(calendarType === 'reminder') addReminder(user.token);
+          else if (calendarType === 'meeting') addMeeting(user.token);
           web.chat.postMessage({ channel: parsedPayload.channel.id, text: 'event created on google' });
         }
       } else { //no user
-        //generate authUrl
+        //generate
         console.log('no user found in /schedule')
-        // var link = authorize(credentials, addEvent, parsedPayload.user.id)
         var link = oauth2Client.generateAuthUrl({
           access_type: 'offline',
           state: parsedPayload.user.id, // meta-data for DB
@@ -190,6 +201,10 @@ app.get('/oauthcallback', (req, res) => {
     oauth2Client.setCredentials(token);
     res.send('congratulations. authorized')
 
+    // if (token.refresh_token) {
+    //   console.log(tokens.access_token);
+    // }
+
     //create user in mongoDB
     new User({slack_id: req.query.state, token: token}).save()
     .then()
@@ -203,12 +218,6 @@ app.get('/oauthcallback', (req, res) => {
 const sessionId = 'nem-bot-sessionId';
 const sessionClient = new dialogflow.SessionsClient();
 const sessionPath = sessionClient.sessionPath(process.env.DIALOGFLOW_PROJECT_ID, sessionId);
-
-
-//GOOGLE CALENDAR
-// If modifying these scopes, delete credentials.json.
-const SCOPES = ['https://www.googleapis.com/auth/calendar'];
-
 
 /**
  * Lists the next 10 events on the user's primary calendar.
@@ -246,20 +255,93 @@ function addReminder(token){
 
   oauth2Client.setCredentials(token)
 
-  oauth2Client.on('tokens', (tokens) => {
-    if (tokens.refresh_token) {
-      // store the refresh_token in my database!
-      console.log(tokens.refresh_token);
-    }
-    console.log(tokens.access_token);
-  });
+  // oauth2Client.on('tokens', (tokens) => {
+  //   if (tokens.refresh_token) {
+  //   console.log(tokens.access_token);
+  // });
+  var event = {
+    'summary': subject,
+    // 'location': '800 Howard St., San Francisco, CA 94103',
+    // 'description': subject,
+    'start': {
+      'dateTime': date,
+      'timeZone': 'America/Los_Angeles',
+    },
+    'end': {
+      'dateTime': date,
+      'timeZone': 'America/Los_Angeles',
+    },
+    // 'recurrence': [
+    //   'RRULE:FREQ=DAILY;COUNT=2'
+    // ],
+    // 'attendees': [
+    //   {'email': 'lpage@example.com'},
+    //   {'email': 'sbrin@example.com'},
+    // ],
+    // 'reminders': {
+    //   'useDefault': false,
+    //   'overrides': [
+    //     {'method': 'email', 'minutes': 24 * 60},
+    //     {'method': 'popup', 'minutes': 10},
+    //   ],
+    // },
+  };
+
 
   const calendar = google.calendar({version: 'v3', auth: oauth2Client})
-  console.log('hello, creating a new event')
-  calendar.events.quickAdd({
+  console.log('DATE', new Date(date).toLocaleString().split(' ')[0])
+  console.log('hello, creating a new reminder')
+  calendar.events.insert({
+    // auth: oauth2Client,
     calendarId: 'primary',
-    text: text
+    // fields: 'summary',
+    resource: event,
   })
+}
+
+function addMeeting(token){
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.CLIENT_ID,
+    process.env.CLIENT_SECRET,
+    process.env.REDIRECT_URL
+  )
+
+  var event = {
+    'summary': subject,
+    // 'location': '800 Howard St., San Francisco, CA 94103',
+    'description': subject,
+    'start': {
+      'dateTime': date,
+      'timeZone': 'America/Los_Angeles',
+    },
+    'end': {
+      'dateTime': date,
+      'timeZone': 'America/Los_Angeles',
+    },
+    // 'recurrence': [
+    //   'RRULE:FREQ=DAILY;COUNT=2'
+    // ],
+    'attendees': [
+      {'email': 'lpage@example.com'},
+      {'email': 'sbrin@example.com'},
+    ],
+    // 'reminders': {
+    //   'useDefault': false,
+    //   'overrides': [
+    //     {'method': 'email', 'minutes': 24 * 60},
+    //     {'method': 'popup', 'minutes': 10},
+    //   ],
+    // },
+  };
+
+  oauth2Client.setCredentials(token)
+  const calendar = google.calendar({version: 'v3', auth: oauth2Client})
+  console.log('hello, creating a new meeting')
+  calendar.events.insert({
+    calendarId: 'primary',
+    resource: event
+  })
+
 }
 
 app.listen(process.env.PORT || 1337)
