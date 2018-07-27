@@ -1,6 +1,6 @@
 export CLIENT_ID="240023613540-arncags0a763aq3cshoo9aaiggmousjh.apps.googleusercontent.com"
 export CLIENT_SECRET="zMk7uQEH-Dzn9tSXYO0L4R5r"
-export REDIRECT_URL="https://33eb316c.ngrok.io/oauthcallback"
+export REDIRECT_URL="http://0bcb0862.ngrok.io/oauthcallback"
 export OATH_ACCESS_TOKEN="9ff719347f9b8594a312bca3318f40f9"
 export DIALOGFLOW_PROJECT_ID="nem-bot-user"
 export GOOGLE_APPLICATION_CREDENTIALS="./nem-bot.json"
