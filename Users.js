@@ -15,6 +15,9 @@ var userSchema = new Schema({
   slackEmail: {
     type: String
   },
+  gmail: {
+    type: String
+  },
   SlackDMIds: {
   },
   setting: {
