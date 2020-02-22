@@ -7,9 +7,9 @@ I collaborated with a team of two others to devleop an Artificial Intelligence b
 # Pictoral Representations
 
 ## Scheduler Bot can schedule reminders in the user's Google Calendar
-![Schedule reminder](./screenshot-reminder)
+![Schedule reminder](./screenshot-reminder.png)
 
 ## Scheduler Bot can schedule meetings in the user's Google Calender and check against another's Google Calendar for valid meeting times
-![Schedule meeting](./screenshot-meeting)
+![Schedule meeting](./screenshot-meeting.png)
 
 https://nem-bot.slack.com/messages
